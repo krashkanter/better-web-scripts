@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         YouTube Video Age
 // @namespace    better-web-scripts
-// @version      1.0.0
-// @description  Show YouTube video ages as years.months using exact upload dates.
+// @version      1.1.0
+// @description  Show YouTube video ages in years and months using exact upload dates.
+// @downloadURL  https://raw.githubusercontent.com/krashkanter/better-web-scripts/main/youtube-video-age.user.js
+// @updateURL    https://raw.githubusercontent.com/krashkanter/better-web-scripts/main/youtube-video-age.user.js
 // @match        https://www.youtube.com/*
 // @grant        none
 // @run-at       document-idle
@@ -33,13 +35,17 @@
     let months = 0;
     // Round partial months up; never roll the year over before its anniversary.
     while (months < 12 && anniversary(upload, years * 12 + months) < today) months++;
-    return `${years}.${months} ${years === 1 && months === 0 ? 'year' : 'years'} old`;
+    const parts = [];
+    if (years) parts.push(`${years} year${years === 1 ? '' : 's'}`);
+    if (months) parts.push(`${months} month${months === 1 ? '' : 's'}`);
+    return parts.length ? `${parts.join(' ')} old` : 'Uploaded today';
   }
 
   const cards = 'ytd-video-renderer, ytd-grid-video-renderer, ytd-rich-item-renderer, ytd-compact-video-renderer, yt-lockup-view-model';
   const labels = '#metadata-line .inline-metadata-item, .yt-content-metadata-view-model__metadata-text';
   const dates = new Map();
   const pending = new Set();
+  const retryAfter = new Map();
   const queue = [];
   let running = 0;
   let scheduled = false;
@@ -49,21 +55,34 @@
     return link ? new URL(link.href, location.origin).searchParams.get('v') : null;
   }
 
+  function dateFromHTML(html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const meta = doc.querySelector('meta[itemprop="uploadDate"], meta[itemprop="datePublished"]');
+    // Watch responses can put the exact date only in the embedded player JSON.
+    const embedded = /"(?:uploadDate|publishDate|datePublished)"\s*:\s*"(\d{4}-\d{2}-\d{2}[^"\\]*)"/.exec(html);
+    return dateOnly(meta?.content) || dateOnly(embedded?.[1]);
+  }
+
   async function loadDate(id) {
     const response = await fetch(`/watch?v=${encodeURIComponent(id)}&hl=en`, {
-      credentials: 'omit', signal: AbortSignal.timeout(15000)
+      credentials: 'same-origin', signal: AbortSignal.timeout(15000)
     });
     if (!response.ok) throw new Error('Upload date unavailable');
-    const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
-    return dateOnly(doc.querySelector('meta[itemprop="uploadDate"], meta[itemprop="datePublished"]')?.content);
+    const date = dateFromHTML(await response.text());
+    if (!date) throw new Error('Upload date unavailable');
+    return date;
   }
 
   function pump() {
     while (running < 3 && queue.length) {
       const id = queue.shift();
       running++;
-      loadDate(id).then(date => dates.set(id, date)).catch(() => {
-        dates.set(id, null); // Leave YouTube's label intact on failure; no retry storm.
+      loadDate(id).then(date => {
+        dates.set(id, date);
+        retryAfter.delete(id);
+      }).catch(() => {
+        // A temporary failure must not disable a video for the entire session.
+        retryAfter.set(id, Date.now() + 5 * 60000);
       }).finally(() => {
         pending.delete(id);
         running--;
@@ -92,7 +111,10 @@
         }
       }
       if (!dates.has(id)) {
-        if (!pending.has(id)) { pending.add(id); queue.push(id); }
+        if (!pending.has(id) && !(retryAfter.get(id) > Date.now())) {
+          pending.add(id);
+          queue.push(id);
+        }
         continue;
       }
       const date = dates.get(id);
@@ -100,11 +122,11 @@
       if (!text) continue;
       for (const el of targets) {
         if (el.textContent === text && el.dataset.videoAgeId === id) continue;
-        el.dataset.videoAgeOriginal = el.textContent;
+        if (el.textContent !== el.dataset.videoAgeText) el.dataset.videoAgeOriginal = el.textContent;
         el.dataset.videoAgeId = id;
         el.dataset.videoAgeText = text;
         el.textContent = text;
-        el.title = `Uploaded ${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} · years.months`;
+        el.title = `Uploaded ${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
       }
     }
     pump();
