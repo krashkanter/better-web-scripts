@@ -59,6 +59,23 @@ Shortcuts in the Common (all users) folders need an elevated shell. If Brave is 
 
 Afterwards start Brave and check `brave://version` → **Command Line**.
 
+## YouTube Channel Blocker
+
+`youtube-channel-blocker.user.js` lets you block YouTube channels the way you block accounts on other social networks. Install it in Tampermonkey: <https://raw.githubusercontent.com/krashkanter/better-web-scripts/main/youtube-channel-blocker.user.js>
+
+Where you can block:
+- **Block channel** at the bottom of the ⋮ menu on videos, Shorts cards, posts and comments
+- **Block** next to Subscribe on watch pages, channel pages and the Shorts player
+
+Blocking a channel:
+- hides its videos, Shorts, playlists, posts and comments on the home page, in search, in the watch-page sidebar and in comment sections
+- covers and pauses its videos and Shorts when you open one directly. The notice offers **Watch anyway** and **Unblock**, and on Shorts also **Next Short**
+- covers its channel page with a notice that offers **View channel** and **Unblock**
+
+A toast after each block offers **Undo**. To see, unblock, export or import the list, open the Tampermonkey menu and choose **Blocked channels**. Import accepts an exported list, or `@handles` and channel links separated by spaces, commas or new lines. The list is kept in Tampermonkey storage, and every open YouTube tab updates when it changes.
+
+Channels are matched by `@handle` or channel ID, taken from links on the page. Shorts cards and watch-page sidebar cards don't link to their channel, so the script looks up their owner with YouTube's oEmbed endpoint. It does this only while the list has entries, three requests at a time, with results cached for the tab. Sidebar cards are looked up only when they show the name of a blocked channel. YouTube DOM changes may require selector updates.
+
 ## YouTube Max Quality
 
 `youtube-max-quality.user.js` loads videos at the highest available resolution. Copied unchanged from `open-untrap/userscript/youtube-max-quality.user.js`. Install it in Tampermonkey the same way.
